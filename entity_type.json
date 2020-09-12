@@ -1,0 +1,10 @@
+{
+    "Drug": 10890,
+    "Disease": 28169,
+    "Gene": 12309,
+    "ChemicalCompound": 63,
+    "Virus": 6666,
+    "Chemical": 2037,
+    "Phenotype": 3054,
+    "Organization": 1711
+}
