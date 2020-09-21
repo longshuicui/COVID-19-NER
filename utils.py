@@ -10,7 +10,7 @@ import re
 from collections import defaultdict, Counter
 import tokenization
 
-def read_task_examples(input_file,is_training,tokenizer):
+def read_task_examples(s,is_training,tokenizer):
     """read data"""
     def is_whitespace(c):
         if c == " " or c == "\r" or c == "\n" or c == "\t" or ord(c) == 0x202F:
@@ -28,17 +28,7 @@ def read_task_examples(input_file,is_training,tokenizer):
 
     # with open(input_file,encoding="utf8") as reader:
     #     input_data=[json.loads(line.strip()) for line in reader]
-    s={"text": "Safety and efficacy of cognitive training plus epigallocatechin-3-gallate in young adults with Down's "
-               "syndrome (TESDAD): a double-blind, randomised, placebo-controlled, phase 2 trial\tEGCG and cognitive "
-               "training for 12 months was significantly more effective than placebo and cognitive training at "
-               "improving visual recognition memory, inhibitory control, and adaptive behaviour. Phase 3 trials "
-               "with a larger population of individuals with Down's syndrome will be needed to assess and confirm "
-               "the long-term efficacy of EGCG and cognitive training.",
-       "entities": [{"entity": "epigallocatechin-3-gallate", "type": "ChemicalCompound", "start": 47, "end": 73},
-                    {"entity": "Down's syndrome", "type": "Disease", "start": 95, "end": 110},
-                    {"entity": "Down's syndrome", "type": "Disease", "start": 438, "end": 453},
-                    {"entity": "EGCG", "type": "ChemicalCompound", "start": 183, "end": 187},
-                    {"entity": "EGCG", "type": "ChemicalCompound", "start": 517, "end": 521}]}
+
     input_data=[s]
     logging.info("*Number*:%d"%len(input_data))
 
@@ -99,6 +89,7 @@ def read_task_examples(input_file,is_training,tokenizer):
         # example=InputExample(guid=eid,text_a=all_doc_tokens,label=tag_labels)
 
         print(all_doc_tokens)
+        print(len(all_doc_tokens))
         print(tag_labels)
 
         exit()
@@ -126,55 +117,53 @@ def write_predictions(origin_text_file,prediction_file,output_prediction_file):
 
     writer=open(output_prediction_file,"w",encoding="utf8")
 
-    predict_result=[]
     for i, line  in enumerate(predict_texts):
         origin_text=json.loads(origin_texts[i].strip())["text"]
-        # fw_text = " ".join(tokenizer.tokenize(origin_text))
-
         tok_text, tok_labels=line.strip().split("\t")
-        # bw_text = token_decode(tok_text)
         sub_tokens = ["[CLS]"] + tok_text.split() + ["[SEP]"]  # 分词时需要加上 [CLS] 和 [SEP] 两个标识
         sub_labels = tok_labels.split()  # 获取每个token的标签
 
         # 获取每条样本的实体集合，
         entities = []
-        entity = ""
+        entity_ = ""
         entity_type = None
-        for k in range(len(sub_tokens)):
+        for k in range(len(sub_tokens[:384])):
             if sub_labels[k] == "O" or sub_labels[k] == "[CLS]":
-                if entity!="":
-                    entity=token_decode(entity)
-                    entities.append({"entity": entity, "type": entity_type})
-                    entity = ""
+                if entity_!="":
+                    entity_=token_decode(entity_)
+                    entities.append({"entity": entity_, "type": entity_type})
+                    entity_ = ""
             elif sub_labels[k][0] == "B":
-                entity = sub_tokens[k]
+                entity_ = sub_tokens[k]
                 entity_type = sub_labels[k][2:]
             elif sub_labels[k][0] == "I":
-                entity += " " + sub_tokens[k]
+                entity_ += " " + sub_tokens[k]
             else:  # 当前标识为[SEP]，表示句子已经结束
                 break
 
-        lower_text=origin_text.lower()
-        print(lower_text)
-        current=0
-        new_entities=[]
+        # 实体去重
+        unique_entities=[]
         for entity in entities:
-            entity["entity"]=entity["entity"].replace(" - ","-")
-            entity["entity"]=entity["entity"].replace(" ' ","'")
-            start=lower_text.find(entity["entity"],current)
-            if start<0:continue
-            end=start+len(entity["entity"])-1
-            current=end
-            entity["start"]=start
-            entity["end"]=end
-            new_entities.append(entity)
+            if entity not in unique_entities:
+                unique_entities.append(entity)
 
-        print(new_entities)
+        del entities
+
+        lower_text=origin_text.lower()
+        new_entities=[]
+        for entity in unique_entities:
+            ent_name = entity["entity"].replace(" - ","-").replace(" ' ","'")
+            current=0
+            while True:
+                if len(ent_name)<2:break
+                start=lower_text.find(ent_name,current)
+                if start<0:break
+                end=start+len(ent_name)
+                current=end
+                new_entities.append({"entity":ent_name,"type":entity["type"] if entity["type"] else "type","start":start,"end":end})
+
         for entity in new_entities:
-            entity["entity"]=origin_text[entity["start"]:entity["end"]+1]
-
-        print(new_entities)
-        print()
+            entity["entity"]=origin_text[entity["start"]:entity["end"]]
 
         item=defaultdict()
         item["text"]=origin_text
@@ -182,16 +171,36 @@ def write_predictions(origin_text_file,prediction_file,output_prediction_file):
         item=json.dumps(item,ensure_ascii=False)
         writer.write(item+"\n")
 
+def merge_result(res1,res2,output_file):
+    with open(res1,encoding="utf8") as file:
+        data1=file.readlines()
+    with open(res2,encoding="utf8") as file:
+        data2=file.readlines()
 
+    assert len(data1)==len(data2)
 
-        # if i>3:
-        #   exit()
+    pred_file=open(output_file,"w",encoding="utf8")
 
+    for i in range(len(data1)):
+        example_a=json.loads(data1[i].strip())
+        example_b=json.loads(data2[i].strip())
 
+        text=example_a["text"]
+        entities_a=example_a["entities"]
+        entities_b=example_b["entities"]
 
+        ent_set_a=set([entity["entity"] for entity in entities_a])
+        ent_set_b=set([entity["entity"] for entity in entities_b])
+        for ent in ent_set_a:
+            if ent not in ent_set_b:
+                for entity in entities_a:
+                    if entity["entity"]==ent:
+                        entities_b.append(entity)
 
+        item={"text":text,"entities":entities_b}
+        pred_file.write(json.dumps(item,ensure_ascii=False)+"\n")
 
-    pass
+    pred_file.close()
 
 
 
@@ -204,6 +213,9 @@ def write_predictions(origin_text_file,prediction_file,output_prediction_file):
 
 
 if __name__ == '__main__':
-    # write_predictions("./task1_public/new_val.json","./test_results.txt","./submit.json")
-    tokenizer=tokenization.FullTokenizer("./vocab.txt",do_lower_case=True)
-    read_task_examples("",True,tokenizer)
+    write_predictions("./task1_public/new_val.json","./test_results.txt","./submit.json")
+    # merge_result("./submit.json","./submit_a.json","final.json")
+    # tokenizer=tokenization.FullTokenizer("./vocab.txt",True)
+    # example={"text": "Cigarette smoking and the risk of endometrial cancer\tEpidemiological studies have shown that cigarette smoking is associated with a reduced risk of endometrial cancer, in contrast to the increased risks observed with many other non-respiratory-tract cancers, including those of the bladder, pancreas, and cervix uteri. Some studies of endometrial cancer suggest that the inverse association with smoking is limited to certain groups of women, such as those who are postmenopausal or those taking hormone-replacement therapy. The biological mechanisms that might underlie this association remain unclear, although several have been proposed, including an antioestrogenic effect of cigarette smoking on circulating oestrogen concentrations, a reduction in relative bodyweight, and an earlier age at menopause.", "entities": [{"entity": "endometrial cancer", "type": "Disease", "start": 34, "end": 52}, {"entity": "endometrial cancer", "type": "Disease", "start": 148, "end": 166}, {"entity": "endometrial cancer", "type": "Disease", "start": 335, "end": 353}, {"entity": "antioestrogenic effect", "type": "Drug", "start": 654, "end": 676}, {"entity": "oestrogen", "type": "ChemicalCompound", "start": 713, "end": 722}]}
+    #
+    # read_task_examples(example,True,tokenizer)
