@@ -10,6 +10,8 @@ import re
 from collections import defaultdict, Counter
 import tokenization
 
+type2idx={"O":0,"Drug": 1,"Disease": 2,"Gene": 3,"ChemicalCompound": 4,"Virus": 5,"Chemical": 6,"Phenotype": 7,"Organization": 8}
+
 def read_task_examples(s,is_training,tokenizer):
     """read data"""
     def is_whitespace(c):
@@ -60,9 +62,8 @@ def read_task_examples(s,is_training,tokenizer):
                 token_to_origin_index.append(i)
                 all_doc_tokens.append(sub_token)
 
-        tag_labels=None
+        tag_labels=[type2idx["O"]]*len(all_doc_tokens)
         if is_training:
-            tag_labels=["O"]*len(all_doc_tokens)
             entities=entry["entities"]
             for entity in entities:
                 ent_tokens=entity["entity"]
@@ -82,14 +83,16 @@ def read_task_examples(s,is_training,tokenizer):
                     token_end_position=len(all_doc_tokens)-1
                 # 获取更加匹配的索引
                 token_start_position,token_end_position=_improve_answer_span(all_doc_tokens,token_start_position,token_end_position,tokenizer,ent_tokens)
-                tag_labels[token_start_position]="B-"+ent_type
-                for index in range(token_start_position+1,token_end_position+1):
-                    tag_labels[index]="I-"+ent_type
+                # tag_labels[token_start_position]="B-"+ent_type
+                # for index in range(token_start_position+1,token_end_position+1):
+                #     tag_labels[index]="I-"+ent_type
+                tag_labels[token_start_position]=type2idx[ent_type]
+                tag_labels[token_end_position]=type2idx[ent_type]
 
         # example=InputExample(guid=eid,text_a=all_doc_tokens,label=tag_labels)
 
         print(all_doc_tokens)
-        print(len(all_doc_tokens))
+        print(entities)
         print(tag_labels)
 
         exit()
@@ -106,7 +109,7 @@ def token_decode(text):
             tokens.append(t)
     return " ".join(tokens)
 
-def write_predictions(origin_text_file,prediction_file,output_prediction_file):
+def write_predictions_ner(origin_text_file,prediction_file,output_prediction_file):
     """将预测结果写入json文件"""
     # tokenizer = tokenization.BasicTokenizer(do_lower_case=True)
     with open(origin_text_file,encoding="utf8") as file:
@@ -202,8 +205,75 @@ def merge_result(res1,res2,output_file):
 
     pred_file.close()
 
+def write_predictions_point(origin_text_file,prediction_file,output_prediction_file):
+    with open(origin_text_file,encoding="utf8") as file:
+        origin_texts=file.readlines()
+    with open(prediction_file,encoding="utf8") as file:
+        predict_texts=file.readlines()
+    assert len(origin_texts)==len(predict_texts)
 
+    writer=open(output_prediction_file,"w",encoding="utf8")
 
+    for i, line in enumerate(predict_texts):
+        origin_text=json.loads(origin_texts[i].strip())["text"]
+        tok_text, start_labels, end_labels =line.strip().split("\t")
+        sub_tokens = ["[CLS]"] + tok_text.split() + ["[SEP]"]
+        sub_start_labels=start_labels.split()
+        sub_end_labels=end_labels.split()
+        if i==21:
+            print(len(sub_tokens),sub_tokens)
+            print(len(sub_start_labels),sub_start_labels)
+            print(len(sub_end_labels),sub_end_labels)
+        # assert len(sub_tokens)==len(sub_start_labels)==len(sub_end_labels)
+
+        entities=[]
+        entity=[]
+        for index in range(min(len(sub_tokens),len(sub_start_labels),len(sub_end_labels))):
+            start_label=sub_start_labels[index]
+            end_label=sub_end_labels[index]
+            if start_label=="O" and end_label=="O" and len(entity)==0: continue
+
+            if start_label==end_label and start_label!="O":
+                entities.append((sub_tokens[index],start_label))
+            else:
+                if len(entity)==0 and start_label!="O" and end_label=="O":
+                    entity.append(sub_tokens[index])
+                elif len(entity)!=0 and start_label=="O" and end_label=="O":
+                    entity.append(sub_tokens[index])
+                elif len(entity)!=0 and start_label=="O" and end_label!="O":
+                    entity.append(sub_tokens[index])
+                    text = token_decode(" ".join(entity))
+                    entities.append((text, end_label))
+                    entity = []
+
+        unique_entities=[]
+        for entity in entities:
+            if entity not in unique_entities:
+                unique_entities.append(entity)
+        del entities
+
+        lower_text = origin_text.lower()
+        new_entities = []
+        for ent_name, ent_type in unique_entities:
+            ent_name=ent_name.replace(" - ","-").replace(" ' ","'")
+            current=0
+            while True:
+                if len(ent_name)<2:break
+                start=lower_text.find(ent_name,current)
+                if start<0:break
+                end=start+len(ent_name)
+                current=end
+                new_entities.append({"entity":ent_name,"type":ent_type if ent_type else "type","start":start,"end":end})
+
+        for entity in new_entities:
+            entity["entity"]=origin_text[entity["start"]:entity["end"]]
+
+        item = defaultdict()
+        item["text"] = origin_text
+        item["entities"] = new_entities if len(new_entities) > 0 else [
+            {"entity": "entity", "type": "type", "start": 1, "end": 2}]
+        item = json.dumps(item, ensure_ascii=False)
+        writer.write(item + "\n")
 
 
 
@@ -213,9 +283,4 @@ def merge_result(res1,res2,output_file):
 
 
 if __name__ == '__main__':
-    write_predictions("./task1_public/new_val.json","./test_results.txt","./submit.json")
-    # merge_result("./submit.json","./submit_a.json","final.json")
-    # tokenizer=tokenization.FullTokenizer("./vocab.txt",True)
-    # example={"text": "Cigarette smoking and the risk of endometrial cancer\tEpidemiological studies have shown that cigarette smoking is associated with a reduced risk of endometrial cancer, in contrast to the increased risks observed with many other non-respiratory-tract cancers, including those of the bladder, pancreas, and cervix uteri. Some studies of endometrial cancer suggest that the inverse association with smoking is limited to certain groups of women, such as those who are postmenopausal or those taking hormone-replacement therapy. The biological mechanisms that might underlie this association remain unclear, although several have been proposed, including an antioestrogenic effect of cigarette smoking on circulating oestrogen concentrations, a reduction in relative bodyweight, and an earlier age at menopause.", "entities": [{"entity": "endometrial cancer", "type": "Disease", "start": 34, "end": 52}, {"entity": "endometrial cancer", "type": "Disease", "start": 148, "end": 166}, {"entity": "endometrial cancer", "type": "Disease", "start": 335, "end": 353}, {"entity": "antioestrogenic effect", "type": "Drug", "start": 654, "end": 676}, {"entity": "oestrogen", "type": "ChemicalCompound", "start": 713, "end": 722}]}
-    #
-    # read_task_examples(example,True,tokenizer)
+    write_predictions_point("./task1_public/new_val.json","./test_results.txt","./submit.json")
