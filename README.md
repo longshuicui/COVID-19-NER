@@ -13,3 +13,24 @@ utils.py脚本中，write_predictions_ner是序列标注的解码,write_predicti
 
 ## 存在问题
 阅读理解方式mask部分都会被预测成实体，虽然在输出的时候可以mask掉，暂时不知道为什么会出现这种情况
+
+
+## 运行
+```buildoutcfg
+# 将bert源码克隆到本地
+git clone https://github.com/google-research/bert.git
+# 下载bert预训练文件，这里用的是bert-base
+wget https://storage.googleapis.com/bert_models/2020_02_20/uncased_L-12_H-768_A-12.zip
+# 创建一个文件夹存放下载的预训练文件
+mkdir uncased_L-12_H-768_A-12 & cd uncased_L-12_H-768_A-12
+# 将下载的文件移动到刚创建的文件夹
+mv ../uncased_L-12_H-768_A-12.zip ./
+# 解压
+unzip uncased_L-12_H-768_A-12.zip
+# 返回上一级目录
+cd ..
+# 运行脚本
+python run_ner_finetune.py
+# 结果解码，生成submit.json, 根据训练方式不同选择不同的解码方式
+python utils.py
+```
