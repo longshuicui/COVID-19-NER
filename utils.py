@@ -130,7 +130,7 @@ def write_predictions_ner(origin_text_file,prediction_file,output_prediction_fil
         entities = []
         entity_ = ""
         entity_type = None
-        for k in range(len(sub_tokens[:384])):
+        for k in range(min(len(sub_tokens),len(sub_labels))):
             if sub_labels[k] == "O" or sub_labels[k] == "[CLS]":
                 if entity_!="":
                     entity_=token_decode(entity_)
@@ -173,37 +173,6 @@ def write_predictions_ner(origin_text_file,prediction_file,output_prediction_fil
         item["entities"]=new_entities if len(new_entities)>0 else [{"entity":"entity","type":"type","start":1,"end":2}]
         item=json.dumps(item,ensure_ascii=False)
         writer.write(item+"\n")
-
-def merge_result(res1,res2,output_file):
-    with open(res1,encoding="utf8") as file:
-        data1=file.readlines()
-    with open(res2,encoding="utf8") as file:
-        data2=file.readlines()
-
-    assert len(data1)==len(data2)
-
-    pred_file=open(output_file,"w",encoding="utf8")
-
-    for i in range(len(data1)):
-        example_a=json.loads(data1[i].strip())
-        example_b=json.loads(data2[i].strip())
-
-        text=example_a["text"]
-        entities_a=example_a["entities"]
-        entities_b=example_b["entities"]
-
-        ent_set_a=set([entity["entity"] for entity in entities_a])
-        ent_set_b=set([entity["entity"] for entity in entities_b])
-        for ent in ent_set_a:
-            if ent not in ent_set_b:
-                for entity in entities_a:
-                    if entity["entity"]==ent:
-                        entities_b.append(entity)
-
-        item={"text":text,"entities":entities_b}
-        pred_file.write(json.dumps(item,ensure_ascii=False)+"\n")
-
-    pred_file.close()
 
 def write_predictions_point(origin_text_file,prediction_file,output_prediction_file):
     with open(origin_text_file,encoding="utf8") as file:
@@ -276,6 +245,37 @@ def write_predictions_point(origin_text_file,prediction_file,output_prediction_f
         writer.write(item + "\n")
 
 
+def merge_result(res1,res2,output_file):
+    with open(res1,encoding="utf8") as file:
+        data1=file.readlines()
+    with open(res2,encoding="utf8") as file:
+        data2=file.readlines()
+
+    assert len(data1)==len(data2)
+
+    pred_file=open(output_file,"w",encoding="utf8")
+
+    for i in range(len(data1)):
+        example_a=json.loads(data1[i].strip())
+        example_b=json.loads(data2[i].strip())
+
+        text=example_a["text"]
+        entities_a=example_a["entities"]
+        entities_b=example_b["entities"]
+
+        ent_set_a=set([entity["entity"] for entity in entities_a])
+        ent_set_b=set([entity["entity"] for entity in entities_b])
+        for ent in ent_set_a:
+            if ent not in ent_set_b:
+                for entity in entities_a:
+                    if entity["entity"]==ent:
+                        entities_b.append(entity)
+
+        item={"text":text,"entities":entities_b}
+        pred_file.write(json.dumps(item,ensure_ascii=False)+"\n")
+
+    pred_file.close()
+
 
 
 
@@ -283,4 +283,4 @@ def write_predictions_point(origin_text_file,prediction_file,output_prediction_f
 
 
 if __name__ == '__main__':
-    write_predictions_point("./task1_public/new_val.json","./test_results.txt","./submit.json")
+    write_predictions_ner("./task1_public/new_val.json","./test_results.txt","./submit.json")
