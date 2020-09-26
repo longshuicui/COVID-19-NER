@@ -71,7 +71,7 @@ flags.DEFINE_integer("predict_batch_size", 8, "Total batch size for predict.")
 
 flags.DEFINE_float("learning_rate", 5e-5, "The initial learning rate for Adam.")
 
-flags.DEFINE_float("num_train_epochs", 18.0, "Total number of training epochs to perform.")
+flags.DEFINE_float("num_train_epochs", 15.0, "Total number of training epochs to perform.")
 
 flags.DEFINE_float("warmup_proportion", 0.1, "Proportion of training to perform linear learning rate warmup for. E.g., 0.1 = 10% of training.")
 
@@ -362,12 +362,12 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids, s
                                input_mask=input_mask,
                                token_type_ids=segment_ids,
                                use_one_hot_embeddings=use_one_hot_embeddings)
-    all_embedding=model.get_all_encoder_layers()
-    # 使用bert最后四层的输出
-    embedding=tf.reduce_mean(all_embedding[8:],axis=0)
-    dim=embedding.get_shape().as_list()[-1]
-    embedding=tf.layers.dense(embedding,units=dim)
-    # embedding = model.get_sequence_output()  # BERT模型输出的embedding  [batch_size,max_seq_len,embedding_size]
+    # all_embedding=model.get_all_encoder_layers()
+    # # 使用bert最后四层的输出
+    # embedding=tf.reduce_mean(all_embedding[8:],axis=0)
+    # dim=embedding.get_shape().as_list()[-1]
+    # embedding=tf.layers.dense(embedding,units=dim)
+    embedding = model.get_sequence_output()  # BERT模型输出的embedding  [batch_size,max_seq_len,embedding_size]
     # 做maxpooling，取序列长度上的最大值
     embedding -= (1.0-tf.cast(tf.expand_dims(input_mask,2),tf.float32)) * 1e10
     maxpooling=tf.reduce_max(embedding,axis=1) # [batch_size, embedding_size]
