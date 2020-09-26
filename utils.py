@@ -283,3 +283,4 @@ def merge_result(res1,res2,output_file):
 
 if __name__ == '__main__':
     write_predictions_point("./task1_public/new_val.json","./test_results.txt","./submit.json")
+
