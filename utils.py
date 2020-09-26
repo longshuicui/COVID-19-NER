@@ -8,7 +8,6 @@ import json
 import logging
 import re
 from collections import defaultdict, Counter
-import tokenization
 
 type2idx={"O":0,"Drug": 1,"Disease": 2,"Gene": 3,"ChemicalCompound": 4,"Virus": 5,"Chemical": 6,"Phenotype": 7,"Organization": 8}
 
@@ -283,4 +282,4 @@ def merge_result(res1,res2,output_file):
 
 
 if __name__ == '__main__':
-    write_predictions_ner("./task1_public/new_val.json","./test_results.txt","./submit.json")
+    write_predictions_point("./task1_public/new_val.json","./test_results.txt","./submit.json")
