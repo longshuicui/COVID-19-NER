@@ -203,6 +203,7 @@ def write_predictions_point(origin_text_file,prediction_file,output_prediction_f
 
             if start_label==end_label and start_label!="O":
                 entities.append((sub_tokens[index],start_label))
+                entity=[]
             else:
                 if len(entity)==0 and start_label!="O" and end_label=="O":
                     entity.append(sub_tokens[index])
