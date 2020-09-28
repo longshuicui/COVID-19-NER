@@ -49,6 +49,8 @@ flags.DEFINE_string("vocab_file", "uncased_L-12_H-768_A-12/vocab.txt", "The voca
 
 flags.DEFINE_string("output_dir", "./output_dir","The output directory where the model checkpoints will be written.")
 
+flags.DEFINE_string("ensemble_dir", "./ensemble_model","The output directory where the model checkpoints will be written.")
+
 ## Other parameters
 
 flags.DEFINE_string("init_checkpoint", "uncased_L-12_H-768_A-12/bert_model.ckpt", "Initial checkpoint (usually from a pre-trained BERT model).")
@@ -583,11 +585,15 @@ def main(_):
                                                        is_training=False,
                                                        drop_remainder=predict_drop_remainder)
 
-        result = estimator.predict(input_fn=predict_input_fn)
+        # 预测过程使用集成模型还是单个模型，若使用集成模型需要先生成，运行ensemble.py脚本
+        ensemble_model_path=os.path.join(FLAGS.ensemble_dir,"average-0")
+        if os.path.exists(ensemble_model_path):
+            result = estimator.predict(input_fn=predict_input_fn,checkpoint_path=os.path.join(FLAGS.output_dir,"average-0"))
+        else:
+            result = estimator.predict(input_fn=predict_input_fn)
 
         output_predict_file = os.path.join(FLAGS.output_dir, "test_results.txt")
         with tf.gfile.GFile(output_predict_file, "w") as writer:
-            num_written_lines = 0
             tf.logging.info("***** Predict results *****")
             for (i, prediction) in enumerate(result):
                 start_points=np.argmax(prediction["start_points"],axis=1)
