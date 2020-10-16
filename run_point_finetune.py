@@ -486,7 +486,7 @@ def main(_):
                                 use_one_hot_embeddings=False)
 
 
-    estimator = tf.estimator.Estimator(model_fn=model_fn,config=run_config,params={"batch_size":32})
+    estimator = tf.estimator.Estimator(model_fn=model_fn,config=run_config,params={"batch_size":FLAGS.train_batch_size})
 
     if FLAGS.do_train:
         train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
