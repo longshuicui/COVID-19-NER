@@ -527,7 +527,7 @@ def main(_):
         # 预测过程使用集成模型还是单个模型，若使用集成模型需要先生成，运行ensemble.py脚本
         ensemble_model_path=os.path.join(FLAGS.ensemble_dir,"average-0")
         if os.path.exists(ensemble_model_path):
-            result = estimator.predict(input_fn=predict_input_fn,checkpoint_path=os.path.join(FLAGS.output_dir,"average-0"))
+            result = estimator.predict(input_fn=predict_input_fn,checkpoint_path=os.path.join(FLAGS.ensemble_dir,"average-0"))
         else:
             result = estimator.predict(input_fn=predict_input_fn)
 
