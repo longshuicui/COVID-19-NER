@@ -39,9 +39,11 @@ flags = tf.flags
 FLAGS = flags.FLAGS
 
 ## Required parameters
-flags.DEFINE_string("train_file", "task1_public/new_train.json","The train file")
+flags.DEFINE_string("train_file", "task1_public/train.json","The train file")
 
-flags.DEFINE_string("dev_file", "task1_public/new_val.json","The dev or predict file")
+flags.DEFINE_string("dev_file", "task1_public/dev.json","The dev or predict file")
+
+flags.DEFINE_string("infer_file", "task1_public/new_val.json","The dev or predict file")
 
 flags.DEFINE_string("bert_config_file", "uncased_L-12_H-768_A-12/bert_config.json", "The config json file")
 
@@ -342,8 +344,12 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids, s
     # dim=embedding.get_shape().as_list()[-1]
     # embedding=tf.layers.dense(embedding,units=dim)
     embedding = model.get_sequence_output()  # BERT模型输出的embedding  [batch_size,max_seq_len,embedding_size]
+    # DGCNN
+    dim = embedding.get_shape().as_list()[-1]
+    embedding = tf.layers.conv1d(embedding, filters=dim, kernel_size=3, padding="same")
+    embedding = tf.layers.conv1d(embedding, filters=dim, kernel_size=3, padding="same")
     # 做maxpooling，取序列长度上的最大值
-    embedding -= (1.0-tf.cast(tf.expand_dims(input_mask,2),tf.float32)) * 1e10
+    embedding -= (1.0 - tf.cast(tf.expand_dims(input_mask, 2), tf.float32)) * 1e10
     maxpooling=tf.reduce_max(embedding,axis=1) # [batch_size, embedding_size]
 
     # 将得到的maxpool拼接到embedding上，
@@ -418,21 +424,16 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,num
                                                      train_op=train_op,
                                                      training_hooks=[logging_hooks])
         elif mode == tf.estimator.ModeKeys.EVAL:
-            def metric_fn(label_ids, logits):
-                weight = tf.sequence_mask(FLAGS.max_seq_length)
-                precision = tf_metrics.precision(label_ids, pred_ids, num_labels, [2, 3, 4, 5, 6, 7], weight)
-                recall = tf_metrics.recall(label_ids, pred_ids, num_labels, [2, 3, 4, 5, 6, 7], weight)
-                f = tf_metrics.f1(label_ids, pred_ids, num_labels, [2, 3, 4, 5, 6, 7], weight)
-
-                return {
-                    "eval_precision": precision,
-                    "eval_recall": recall,
-                    "eval_f": f,
-                    "eval_loss": total_loss,
-                }
-
-            eval_metrics = (metric_fn, [label_ids, logits])
-            output_spec = tf.estimator.EstimatorSpec(mode=mode,loss=total_loss)
+            eval_metrics={"eval_start_p:":tf_metrics.precision(start_label_ids,tf.argmax(tf.nn.softmax(start_logits,2),axis=2),num_labels),
+                          "eval_start_r":tf_metrics.recall(start_label_ids,tf.argmax(tf.nn.softmax(start_logits,2),axis=2),num_labels),
+                          "eval_start_f":tf_metrics.f1(start_label_ids,tf.argmax(tf.nn.softmax(start_logits,2),axis=2),num_labels),
+                          "eval_end_p":tf_metrics.precision(end_label_ids,tf.argmax(tf.nn.softmax(end_logits,2),axis=2),num_labels),
+                          "eval_end_r":tf_metrics.recall(end_label_ids,tf.argmax(tf.nn.softmax(end_logits,2),axis=2),num_labels),
+                          "eval_end_f":tf_metrics.f1(end_label_ids,tf.argmax(tf.nn.softmax(end_logits,2),axis=2),num_labels),
+                          }
+            output_spec = tf.estimator.EstimatorSpec(mode=mode,
+                                                     loss=total_loss,
+                                                     eval_metric_ops=eval_metrics)
         else:
             output_spec = tf.estimator.EstimatorSpec(mode=mode,
                                                      predictions={"start_points": tf.nn.softmax(start_logits,axis=2),
@@ -503,9 +504,28 @@ def main(_):
                                                      drop_remainder=True)
         estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
 
+    if FLAGS.do_eval:
+        eval_examples = read_task_examples(FLAGS.dev_file,False,tokenizer,type2idx)
+        eval_file = os.path.join(FLAGS.output_dir, "eval.tf_record")
+        if not os.path.exists(eval_file):
+            file_based_convert_examples_to_features(eval_examples, type2idx, FLAGS.max_seq_length, eval_file,tokenizer)
+        logging.info("***** Running valid*****")
+        logging.info("  Num examples = %d"%(len(eval_examples)))
+        logging.info("  Batch size = %d", FLAGS.train_batch_size)
+        eval_input_fn = file_based_input_fn_builder(input_file=eval_file,
+                                                    seq_length=FLAGS.max_seq_length,
+                                                    is_training=False,
+                                                    drop_remainder=False)
+        result=estimator.evaluate(input_fn=eval_input_fn,steps=len(eval_examples)//FLAGS.train_batch_size)
+        output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
+        with tf.gfile.GFile(output_eval_file, "w") as writer:
+            logging.info("***** Eval results *****")
+            for key in sorted(result.keys()):
+                logging.info("  %s = %s", key, str(result[key]))
+                writer.write("%s = %s\n" % (key, str(result[key])))
 
     if FLAGS.do_predict:
-        predict_examples = read_task_examples(FLAGS.dev_file,False,tokenizer,type2idx)
+        predict_examples = read_task_examples(FLAGS.infer_file,False,tokenizer,type2idx)
         num_actual_predict_examples = len(predict_examples)
 
         predict_file = os.path.join(FLAGS.output_dir, "predict.tf_record")
@@ -518,14 +538,14 @@ def main(_):
                         len(predict_examples) - num_actual_predict_examples)
         logging.info("  Batch size = %d", FLAGS.predict_batch_size)
 
-        predict_drop_remainder = True if FLAGS.use_tpu else False
+
         predict_input_fn = file_based_input_fn_builder(input_file=predict_file,
                                                        seq_length=FLAGS.max_seq_length,
                                                        is_training=False,
                                                        drop_remainder=predict_drop_remainder)
 
         # 预测过程使用集成模型还是单个模型，若使用集成模型需要先生成，运行ensemble.py脚本
-        ensemble_model_path=os.path.join(FLAGS.ensemble_dir,"average-0")
+        ensemble_model_path=os.path.join(FLAGS.ensemble_dir,"checkpoint")
         if os.path.exists(ensemble_model_path):
             result = estimator.predict(input_fn=predict_input_fn,checkpoint_path=os.path.join(FLAGS.ensemble_dir,"average-0"))
         else:
