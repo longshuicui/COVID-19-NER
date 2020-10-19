@@ -542,7 +542,7 @@ def main(_):
         predict_input_fn = file_based_input_fn_builder(input_file=predict_file,
                                                        seq_length=FLAGS.max_seq_length,
                                                        is_training=False,
-                                                       drop_remainder=predict_drop_remainder)
+                                                       drop_remainder=False)
 
         # 预测过程使用集成模型还是单个模型，若使用集成模型需要先生成，运行ensemble.py脚本
         ensemble_model_path=os.path.join(FLAGS.ensemble_dir,"checkpoint")
