@@ -11,9 +11,6 @@ utils.py脚本中，write_predictions_ner是序列标注的解码,write_predicti
 NER方式，f1=0.7005  
 MRC方式，f1=0.7242
 
-## 存在问题
-阅读理解方式mask部分都会被预测成实体，虽然在输出的时候可以mask掉，暂时不知道为什么会出现这种情况
-
 
 ## 运行
 ```buildoutcfg
